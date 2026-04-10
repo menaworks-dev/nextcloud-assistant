@@ -2,7 +2,7 @@
   - SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
   - SPDX-License-Identifier: AGPL-3.0-or-later
 -->
-# Nextcloud Assistant (MenaWorks Fork)
+# Nextcloud Assistant menaworks. Fork)
 
 Fork of [nextcloud/assistant](https://github.com/nextcloud/assistant) with Claude Code integration, real-time SSE streaming, and rich tool rendering via [AIquila MCP](https://github.com/elgorro/aiquila-mcp).
 
