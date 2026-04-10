@@ -2,61 +2,110 @@
   - SPDX-FileCopyrightText: 2023 Nextcloud GmbH and Nextcloud contributors
   - SPDX-License-Identifier: AGPL-3.0-or-later
 -->
-# Nextcloud Assistant
+# Nextcloud Assistant (MenaWorks Fork)
 
-[![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/assistant)](https://api.reuse.software/info/github.com/nextcloud/assistant)
+Fork of [nextcloud/assistant](https://github.com/nextcloud/assistant) with Claude Code integration, real-time SSE streaming, and rich tool rendering via [AIquila MCP](https://github.com/elgorro/aiquila-mcp).
+
+## What's Different
+
+This fork connects the Nextcloud AI Assistant to a Claude Code proxy server, giving it access to 150+ Nextcloud MCP tools (files, calendar, contacts, deck, talk, mail, etc.) with:
+
+- **Real-time SSE streaming** — Responses stream token-by-token directly from the proxy through nginx, bypassing PHP-FPM buffering
+- **Rich tool cards** — Structured rendering for tool results (file lists, calendar events, deck boards, notifications, contacts) instead of plain text
+- **Clickable actions** — Tool cards link to relevant Nextcloud apps (click a deck card to open the board, a notification to open the app)
+- **Conversation history** — The proxy maintains session context across messages
+- **Automatic fallback** — If streaming fails, falls back to the standard polling-based generation
+
+## Architecture
+
+```
+Browser
+  |
+  |-- GET /apps/assistant/stream/{sessionId}  -->  PHP (auth + prepare messages + API key)
+  |-- POST /v1/chat/completions               -->  nginx proxy_pass --> Claude Proxy --> Claude CLI
+  |-- POST /ocs/.../chat/save_streamed         -->  PHP (save response to DB)
+  |
+  +-- SSE chunks render token-by-token in the chat UI
+```
+
+### Components
+
+| Component | Repo | Role |
+|-----------|------|------|
+| **Assistant App** | this repo | Frontend UI, message DB, streaming endpoints |
+| **Claude Proxy** | [menaworks-dev/claude-proxy](https://github.com/menaworks-dev/claude-proxy) | OpenAI-compatible API wrapping Claude CLI with `--include-partial-messages` |
+| **AIquila MCP** | [elgorro/aiquila-mcp](https://github.com/elgorro/aiquila-mcp) | MCP server exposing Nextcloud APIs as tools |
+
+## Setup
+
+### Prerequisites
+
+- Nextcloud 32+
+- Claude CLI installed on the host
+- AIquila MCP server connected to Claude CLI
+- Node.js for the proxy server
+
+### 1. Deploy the proxy
+
+```bash
+git clone https://github.com/menaworks-dev/claude-proxy.git
+cd claude-proxy
+node server.js  # runs on port 8900
+```
+
+### 2. Configure nginx
+
+Add to your Nextcloud nginx config:
+
+```nginx
+location ^~ /v1/ {
+    proxy_buffering off;
+    proxy_pass http://localhost:8900;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_read_timeout 180s;
+}
+```
+
+### 3. Install the assistant app
+
+```bash
+cd /path/to/nextcloud/custom_apps/
+git clone -b menaworks/rich-tool-cards https://github.com/menaworks-dev/nextcloud-assistant.git assistant
+cd assistant && npm ci && npm run build
+occ app:enable assistant
+```
+
+### 4. Set the API key
+
+The proxy API key must match what's configured in `integration_openai`:
+
+```bash
+occ config:app:set integration_openai api_key --value="your-proxy-key"
+```
+
+### 5. OPcache (development)
+
+For development, set `opcache.revalidate_freq=0` so PHP picks up file changes immediately:
+
+```ini
+; Mount as /usr/local/etc/php/conf.d/zzz-opcache-dev.ini
+opcache.revalidate_freq=0
+```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `lib/Controller/AssistantController.php` | `streamGenerate()` — prepares messages + API key for frontend streaming |
+| `lib/Controller/ChattyLLMController.php` | `saveStreamedMessage()` — persists streamed response to DB |
+| `src/components/ChattyLLM/ChattyLLMInputForm.vue` | `runStreamingTask()` — SSE client with polling fallback |
+| `src/components/ChattyLLM/ToolCards.vue` | Rich rendering for all tool categories with text parsers |
+| `appinfo/routes.php` | Stream + save routes |
+
+## Original README
 
 This app brings a user interface to use the Nextcloud text processing feature.
-
 It allows users to launch AI tasks, be notified when they finish and see the results.
-The assistant also appears in others apps like Text to easily process parts of a document.
 
-More details on the assistant OCS API and frontend integration possibilities in the
-[developer doc](https://github.com/nextcloud/assistant/raw/main/docs/developer)
-
-### How to use it
-
-A new right header menu entry appears. Once clicked, the assistant is displayed and you can select and task type and
-set the input you want to process.
-
-The task might run immediately or be scheduled depending on the time estimation given by the AI provider.
-Once a task is scheduled, it will run as a background job. When it is finished, you will receive a notification
-from which the results can be displayed.
-
-Other apps can integrate with the assistant. For example, Text will display an inline button besides every paragraph
-to directly select a task type to process this paragraph. Selecting a task this way will open the assistant with the task
-being pre-selected and the input text set.
-
-More details and screenshots in the [user doc](https://github.com/nextcloud/assistant/raw/main/docs/user).
-
-## Features
-
-In the assistant, the list of available tasks depends on the available providers installed via other apps.
-This means you have complete freedom over which service/software will actually run your AI tasks.
-
-### Text processing
-
-So far, the [Local Large language model](https://github.com/nextcloud/llm2#readme)
-and the [OpenAi/LocalAI integration](https://apps.nextcloud.com/apps/integration_openai) apps
-include text processing providers to:
-* Summarize
-* Extract topics
-* Generate a headline
-* Get an answer from a free prompt
-* Reformulate (OpenAi/LocalAi only)
-* Context writer: Generate text with a specified style. The style can be described or provided via an example text.
-* Chat with AI
-
-### Text to image (Image generation)
-
-Known providers:
-* [OpenAi/LocalAI integration](https://apps.nextcloud.com/apps/integration_openai)
-* [Text2Image Stable Diffusion](https://apps.nextcloud.com/apps/text2image_stablediffusion)
-
-### Speech to text (Audio transcription)
-
-Known providers:
-* [OpenAi/LocalAI integration](https://apps.nextcloud.com/apps/integration_openai)
-* [Local Whisper Speech-To-Text](https://apps.nextcloud.com/apps/stt_whisper)
-
-More details on how to set this up in the [admin docs](https://docs.nextcloud.com/server/latest/admin_manual/ai/index.html)
+More details in the [upstream repo](https://github.com/nextcloud/assistant).
