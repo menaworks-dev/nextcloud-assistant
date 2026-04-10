@@ -56,11 +56,12 @@
 			<NcDateTime class="message__header__timestamp" :timestamp="new Date((message?.timestamp ?? 0) * 1000)" :ignore-seconds="true" />
 		</div>
 		<NcRichText class="message__content"
-			:text="message.content"
+			:text="cleanContent"
 			:use-markdown="true"
 			:reference-limit="1"
 			:references="references"
 			:autolink="true" />
+		<ToolCards v-if="toolData.length" :tools="toolData" />
 		<AudioDisplay v-for="a in audioAttachments"
 			:key="a.type + '-' + a.file_id"
 			class="message__content"
@@ -84,6 +85,7 @@ import { NcRichText } from '@nextcloud/vue/components/NcRichText'
 import InformationBox from 'vue-material-design-icons/InformationBox.vue'
 
 import MessageActions from './MessageActions.vue'
+import ToolCards from './ToolCards.vue'
 import AudioDisplay from '../fields/AudioDisplay.vue'
 
 import { getCurrentUser } from '@nextcloud/auth'
@@ -101,6 +103,7 @@ export default {
 	components: {
 		AudioDisplay,
 		AssistantIcon,
+		ToolCards,
 
 		NcAvatar,
 		NcDateTime,
@@ -157,6 +160,21 @@ export default {
 	},
 
 	computed: {
+		cleanContent() {
+			let content = this.message.content || ''
+			// Remove TOOL_DATA block and the visible fallback
+			content = content.replace(/\n*<!-- TOOL_DATA:.*?:TOOL_DATA -->/s, '')
+			content = content.replace(/\n*---\n\*\*Kullanılan araçlar:\*\*\n(?:- [^\n]*\n?)*/g, '')
+			return content.trim()
+		},
+		toolData() {
+			const content = this.message.content || ''
+			const match = content.match(/<!-- TOOL_DATA:(.*?):TOOL_DATA -->/)
+			if (match) {
+				try { return JSON.parse(match[1]) } catch { return [] }
+			}
+			return []
+		},
 		parsedSources() {
 			if (!this.message.sources || ['', '[]'].includes(this.message.sources)) {
 				return []
