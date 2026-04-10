@@ -52,7 +52,8 @@
 					<div v-for="(event, ei) in getArrayResult(tool)"
 						:key="ei"
 						class="event-item"
-						:style="event.color ? { borderLeftColor: event.color } : {}">
+						:style="event.color ? { borderLeftColor: event.color } : {}"
+						@click="openCalendar()">
 						<CalendarIcon :size="16" class="event-item__icon" />
 						<div class="event-item__details">
 							<strong>{{ event.summary || 'Etkinlik' }}</strong>
@@ -161,7 +162,8 @@
 				<div v-if="isNotificationResult(tool)" class="tool-card__notifs">
 					<div v-for="(notif, ni) in getArrayResult(tool)"
 						:key="ni"
-						class="notif-item">
+						class="notif-item"
+						@click="openNotification(notif)">
 						<BellIcon :size="16" class="notif-item__icon" />
 						<div class="notif-item__details">
 							<strong>{{ notif.subject || 'Bildirim' }}</strong>
@@ -600,6 +602,19 @@ export default {
 			const ext = title.split('.').pop().toLowerCase()
 			return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)
 		},
+		openNotification(notif) {
+			const appRoutes = {
+				firstrunwizard: '/settings/user',
+				survey_client: '/settings/admin/serverinfo',
+				updatenotification: '/settings/admin/overview',
+				announcement_center: '/apps/announcementcenter',
+			}
+			const route = appRoutes[notif.app] || '/apps/' + notif.app
+			window.open(generateUrl(route), '_blank')
+		},
+		openCalendar() {
+			window.open(generateUrl('/apps/calendar'), '_blank')
+		},
 		openDeck(card) {
 			if (card.id) {
 				window.open(generateUrl('/apps/deck/#/board/' + card.id), '_blank')
@@ -802,6 +817,11 @@ export default {
 	border-left: 3px solid var(--color-primary-element);
 	margin-bottom: 4px;
 	background: var(--color-background-dark);
+	cursor: pointer;
+
+	&:hover {
+		background: var(--color-background-hover);
+	}
 
 	&__icon {
 		color: var(--color-primary-element);
@@ -1084,6 +1104,11 @@ export default {
 	padding: 6px 8px;
 	border-radius: var(--border-radius);
 	margin-bottom: 4px;
+	cursor: pointer;
+
+	&:hover {
+		background: var(--color-background-hover);
+	}
 
 	&__icon {
 		color: var(--color-warning);

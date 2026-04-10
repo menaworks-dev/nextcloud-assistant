@@ -1071,4 +1071,34 @@ class ChattyLLMController extends OCSController {
 		$this->taskProcessingManager->scheduleTask($task);
 		return $task->getId() ?? 0;
 	}
+
+	/**
+	 * Save a streamed assistant message to DB
+	 */
+	#[NoAdminRequired]
+	public function saveStreamedMessage(int $sessionId, string $content): JSONResponse {
+		if ($this->userId === null) {
+			return new JSONResponse(['error' => 'User not logged in'], Http::STATUS_UNAUTHORIZED);
+		}
+
+		$sessionExists = $this->sessionMapper->exists($this->userId, $sessionId);
+		if (!$sessionExists) {
+			return new JSONResponse(['error' => 'Session not found'], Http::STATUS_NOT_FOUND);
+		}
+
+		try {
+			$message = new Message();
+			$message->setSessionId($sessionId);
+			$message->setRole('assistant');
+			$message->setContent($content);
+			$message->setTimestamp(time());
+			$message->setOcpTaskId(0);
+			$this->messageMapper->insert($message);
+			return new JSONResponse(['status' => 'ok']);
+		} catch (\Exception $e) {
+			$this->logger->error('Failed to store streamed message', ['exception' => $e]);
+			return new JSONResponse(['error' => 'Failed to save'], Http::STATUS_INTERNAL_SERVER_ERROR);
+		}
+	}
+
 }

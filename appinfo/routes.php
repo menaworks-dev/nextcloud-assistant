@@ -19,6 +19,7 @@ return [
 		['name' => 'assistant#getAssistantStandalonePage', 'url' => '/', 'verb' => 'GET'],
 
 		['name' => 'preview#getFileImage', 'url' => '/preview', 'verb' => 'GET'],
+		['name' => 'assistant#streamGenerate', 'url' => '/stream/{sessionId}', 'verb' => 'GET'],
 	],
 	'ocs' => [
 		['name' => 'assistantApi#getAvailableTaskTypes', 'url' => '/api/{apiVersion}/task-types', 'verb' => 'GET', 'requirements' => $requirements],
@@ -50,5 +51,6 @@ return [
 		['name' => 'chattyLLM#checkMessageGenerationTask', 'url' => '/chat/check_generation', 'verb' => 'GET'],
 		['name' => 'chattyLLM#generateTitle', 'url' => '/chat/generate_title', 'verb' => 'GET'],
 		['name' => 'chattyLLM#checkTitleGenerationTask', 'url' => '/chat/check_title_generation', 'verb' => 'GET'],
+		['name' => 'chattyLLM#saveStreamedMessage', 'url' => '/chat/save_streamed', 'verb' => 'POST'],
 	],
 ];

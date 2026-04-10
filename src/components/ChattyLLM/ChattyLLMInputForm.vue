@@ -673,26 +673,134 @@ export default {
 		},
 
 		async runGenerationTask(sessionId, agencyConfirm = null) {
+			// Try streaming first, fall back to polling
+			if (agencyConfirm === null) {
+				try {
+					await this.runStreamingTask(sessionId)
+					return
+				} catch (e) {
+					console.warn('Streaming failed, fallback to polling:', e.message, e)
+				}
+			}
 			try {
 				this.slowPickup = false
 				this.loading.llmGeneration = true
-				const params = {
-					sessionId,
-				}
+				const params = { sessionId }
 				if (agencyConfirm !== null) {
 					params.agencyConfirm = agencyConfirm ? 1 : 0
 				}
 				this.saveLastSelectedTaskType('chatty-llm')
 				const generationResponse = await axios.get(getChatURL('/generate'), { params })
 				const generationResponseData = generationResponse.data
-				console.debug('scheduleGenerationTask response:', generationResponseData)
 				const message = await this.pollGenerationTask(generationResponseData.taskId, sessionId)
-				console.debug('checkTaskPolling result:', message)
 				this.messages.push(message)
 				this.scrollToBottom()
 			} catch (error) {
 				console.error('scheduleGenerationTask error:', error)
 				showError(t('assistant', 'Error generating a response'))
+			} finally {
+				this.loading.llmGeneration = false
+			}
+		},
+
+		async runStreamingTask(sessionId) {
+			this.slowPickup = false
+			this.loading.llmGeneration = true
+			this.saveLastSelectedTaskType('chatty-llm')
+
+			// Step 1: Get messages + API key from PHP (handles auth + DB)
+			const prepareUrl = generateUrl('/apps/assistant/stream/' + sessionId)
+			const prepareResp = await fetch(prepareUrl, { credentials: 'same-origin' })
+			if (!prepareResp.ok) {
+				throw new Error('Stream prepare failed: ' + prepareResp.status)
+			}
+			const { messages: chatMessages, apiKey, user } = await prepareResp.json()
+
+			const streamMsg = {
+				id: 'stream-' + Date.now(),
+				role: 'assistant',
+				content: '',
+				timestamp: Math.floor(Date.now() / 1000),
+				attachments: [],
+			}
+			this.messages.push(streamMsg)
+			this.scrollToBottom()
+
+			try {
+				// Step 2: Stream directly from proxy via nginx reverse proxy
+				const response = await fetch('/v1/chat/completions', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: 'Bearer ' + apiKey,
+					},
+					body: JSON.stringify({
+						model: 'claude-code',
+						messages: chatMessages,
+						stream: true,
+						user,
+					}),
+				})
+
+				if (!response.ok || !response.body) {
+					throw new Error('Stream response not ok: ' + response.status)
+				}
+
+				const reader = response.body.getReader()
+				const decoder = new TextDecoder()
+				let fullContent = ''
+
+				while (true) {
+					const { done, value } = await reader.read()
+					if (done) break
+
+					const chunk = decoder.decode(value, { stream: true })
+					for (const line of chunk.split('\n')) {
+						const trimmed = line.trim()
+						if (!trimmed.startsWith('data: ')) continue
+						const jsonStr = trimmed.substring(6)
+						if (jsonStr === '[DONE]') continue
+						try {
+							const parsed = JSON.parse(jsonStr)
+							const delta = parsed.choices?.[0]?.delta?.content
+							if (delta) {
+								fullContent += delta
+								const idx = this.messages.findIndex(m => m.id === streamMsg.id)
+								if (idx !== -1) {
+									this.messages[idx] = { ...this.messages[idx], content: fullContent }
+								}
+								this.scrollToBottom()
+							}
+						} catch {}
+					}
+				}
+
+				// Step 3: Save the completed message to DB via OCS
+				if (fullContent) {
+					try {
+						await axios.post(getChatURL('/save_streamed'), { sessionId, content: fullContent })
+					} catch (saveErr) {
+						console.warn('Failed to save streamed message, will retry via new_message', saveErr)
+						try {
+							await axios.put(getChatURL('/new_message'), {
+								message: fullContent,
+								sessionId,
+								role: 'assistant',
+							})
+						} catch (e2) {
+							console.error('Fallback save also failed', e2)
+						}
+					}
+				}
+
+				const finalIdx = this.messages.findIndex(m => m.id === streamMsg.id)
+				if (finalIdx !== -1) {
+					this.messages[finalIdx] = { ...this.messages[finalIdx], content: fullContent, id: 'streamed-' + Date.now() }
+				}
+			} catch (error) {
+				const idx = this.messages.findIndex(m => m.id === streamMsg.id)
+				if (idx !== -1) this.messages.splice(idx, 1)
+				throw error
 			} finally {
 				this.loading.llmGeneration = false
 			}
