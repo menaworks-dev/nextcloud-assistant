@@ -34,7 +34,14 @@
 						:key="fi"
 						class="file-item"
 						@click="openFile(file)">
-						<component :is="getFileIcon(file)" :size="18" class="file-item__icon" />
+						<img v-if="file.fileid && isImageMime(file.mime)"
+							:src="getThumbnailUrl(file.fileid)"
+							class="file-item__thumb"
+							loading="lazy">
+						<component :is="getFileIcon(file)"
+							v-else
+							:size="18"
+							class="file-item__icon" />
 						<span class="file-item__name">{{ file.basename || file.filename || 'Dosya' }}</span>
 						<span v-if="file.size > 0" class="file-item__size">{{ formatSize(file.size) }}</span>
 					</div>
@@ -57,7 +64,11 @@
 						:key="si"
 						class="search-item"
 						@click="openSearchResult(item)">
-						<MagnifyIcon :size="16" class="search-item__icon" />
+						<img v-if="item.fileid && isImageTitle(item.title)"
+							:src="getThumbnailUrl(item.fileid)"
+							class="search-item__thumb"
+							loading="lazy">
+						<MagnifyIcon v-else :size="16" class="search-item__icon" />
 						<div class="search-item__details">
 							<strong>{{ item.title || item.name || item.basename || 'Sonuç' }}</strong>
 							<span v-if="item.subline || item.path">{{ item.subline || item.path }}</span>
@@ -312,6 +323,17 @@ export default {
 				window.open(generateUrl('/apps/files/?dir=' + encodeURIComponent(file.filename.substring(0, file.filename.lastIndexOf('/'))) + '&openfile=true&scrollto=' + encodeURIComponent(file.basename)), '_blank')
 			}
 		},
+		getThumbnailUrl(fileid) {
+			return generateUrl('/core/preview?fileId=' + fileid + '&x=64&y=64&a=true')
+		},
+		isImageMime(mime) {
+			return mime && mime.startsWith('image/')
+		},
+		isImageTitle(title) {
+			if (!title) return false
+			const ext = title.split('.').pop().toLowerCase()
+			return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)
+		},
 		openSearchResult(item) {
 			if (item.resourceUrl) {
 				window.open(item.resourceUrl, '_blank')
@@ -446,6 +468,14 @@ export default {
 		color: var(--color-primary-element);
 	}
 
+	&__thumb {
+		width: 32px;
+		height: 32px;
+		border-radius: var(--border-radius);
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
 	&__name {
 		flex: 1;
 		font-size: 13px;
@@ -506,6 +536,14 @@ export default {
 	&__icon {
 		flex-shrink: 0;
 		color: var(--color-primary-element);
+	}
+
+	&__thumb {
+		width: 40px;
+		height: 40px;
+		border-radius: var(--border-radius);
+		object-fit: cover;
+		flex-shrink: 0;
 	}
 
 	&__details {
